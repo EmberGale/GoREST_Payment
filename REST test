@@ -1,0 +1,24 @@
+POST
+{
+    "Person": "Biba",
+    "Amount": 10,
+    "Date": "Today"
+}
+
+GET
+{
+    "Person": "Biba"
+}
+
+PATCH
+{
+    "Id": 3,
+    "Person": "Bibokus",
+    "Amount": 333,
+    "Date": "GggG"
+}
+
+DELETE
+{
+	"Id": 6
+}
