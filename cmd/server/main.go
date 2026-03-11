@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/glebarez/go-sqlite"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -51,17 +53,6 @@ func main() {
 	if err != nil {
 		return
 	}
-}
-
-type Payment struct {
-	Id     int     `json:"id"`
-	Person string  `json:"Person"`
-	Amount float32 `json:"Amount"`
-	Date   string  `json:"Date"`
-}
-
-type Person struct {
-	Name string `json:"Person"`
 }
 
 func paymentHandler(w http.ResponseWriter, r *http.Request) {
