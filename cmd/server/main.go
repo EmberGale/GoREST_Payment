@@ -2,182 +2,60 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
-	"time"
 
-	"github.com/glebarez/go-sqlite"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"GoREST_Payment/internal/handler"
+	"GoREST_Payment/internal/repository"
+	"GoREST_Payment/internal/service"
+
+	_ "github.com/glebarez/go-sqlite"
 )
 
 const (
-	schemaSQL = `CREATE TABLE IF NOT EXISTS payments (Id INTEGER PRIMARY KEY, Person TEXT, Amount float, Date TEXT);`
+	schemaSQL = `CREATE TABLE IF NOT EXISTS payments (
+		Id INTEGER PRIMARY KEY,
+		Person TEXT,
+		Amount REAL,
+		Date TEXT
+	);`
+	dbFile = "payments.db"
 )
 
-var paymentDB *sql.DB
-
-const dbfile = "payments.db"
-
-func NewDB(dbpath string) error {
-	var err error
-	paymentDB, err = sql.Open("sqlite", dbpath)
+func initDB(dbPath string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if err = paymentDB.Ping(); err != nil {
-		return err
+	if err := db.Ping(); err != nil {
+		return nil, err
 	}
 
-	if _, err := paymentDB.Exec(schemaSQL); err != nil {
-		return err
+	if _, err := db.Exec(schemaSQL); err != nil {
+		return nil, err
 	}
 
-	return nil
+	return db, nil
 }
 
 func main() {
-
-	fmt.Printf("%+v", time.Time{})
-	err := NewDB(dbfile)
+	// Инициализация БД
+	db, err := initDB(dbFile)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("Failed to initialize database: %v", err))
 	}
+	defer db.Close()
 
-	// HTTP Server
-	http.HandleFunc("/payment", paymentHandler)
-	err = http.ListenAndServe(":8080", nil)
-	if err != nil {
-		return
+	// Внедрение зависимостей: DB → repository → service → handler → router
+	paymentRepo := repository.NewPaymentRepository(db)
+	paymentService := service.NewPaymentService(paymentRepo)
+	paymentHandler := handler.NewPaymentHandler(paymentService)
+	router := handler.NewRouter(paymentHandler)
+
+	// Запуск HTTP-сервера
+	fmt.Println("Server starting on :8080")
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		panic(fmt.Sprintf("Failed to start server: %v", err))
 	}
-}
-
-func paymentHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
-		fmt.Printf("\nPost called\n")
-		postMethod(w, r)
-	case "GET":
-		fmt.Printf("\nGet called\n")
-		getMethod(w, r)
-	case "PATCH":
-		fmt.Printf("\nUpdate called\n")
-		updateMethod(w, r)
-	case "DELETE":
-		fmt.Printf("\nDelete called\n")
-		deleteMethod(w, r)
-	default:
-		http.Error(w, "Invalid HTTP method", http.StatusMethodNotAllowed)
-		return
-	}
-}
-
-func postMethod(w http.ResponseWriter, r *http.Request) {
-	payment := Payment{}
-	if err := json.NewDecoder(r.Body).Decode(&payment); err != nil {
-		fmt.Print("error decoding payment")
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		fmt.Printf(err.Error())
-		return
-	}
-
-	println("\n Unmarshaled payment")
-	println(payment.Person, payment.Amount, payment.Date)
-	println("---\n")
-
-	sql_q := `INSERT INTO payments (person, amount, date) VALUES (?, ?, ?)`
-
-	var result, err = paymentDB.Exec(sql_q, payment.Person, payment.Amount, payment.Date)
-	if err != nil {
-		println(err.Error())
-		return
-	}
-	println(result.LastInsertId())
-	w.WriteHeader(http.StatusCreated)
-	var id, _ = result.LastInsertId()
-	res := "Payment created with ID: " + strconv.FormatInt(id, 10)
-	w.Write([]byte(res))
-}
-
-func getMethod(w http.ResponseWriter, r *http.Request) {
-	person := Person{}
-	if err := json.NewDecoder(r.Body).Decode(&person); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	println(person.Name)
-
-	result, err := paymentDB.Query("SELECT * FROM payments WHERE person = $1", person.Name)
-	if err != nil {
-		return
-	}
-	println(result)
-
-	var paymentsQuery Payment
-	var paymentsRes []Payment
-	for result.Next() {
-		var id int64
-		err := result.Scan(&paymentsQuery.Id, &paymentsQuery.Person, &paymentsQuery.Amount, &paymentsQuery.Date)
-		if err != nil {
-			println(err.Error())
-			return
-		}
-		println(id, paymentsQuery.Person, paymentsQuery.Amount, paymentsQuery.Date)
-		println("---")
-		paymentsRes = append(paymentsRes, paymentsQuery)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(paymentsRes)
-	if err != nil {
-		return
-	}
-}
-
-func updateMethod(w http.ResponseWriter, r *http.Request) {
-	payment := Payment{}
-	if err := json.NewDecoder(r.Body).Decode(&payment); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		println(err.Error())
-		return
-	}
-
-	println(payment.Id)
-
-	result, err := paymentDB.Exec("UPDATE payments set Person = $2, Amount = $3, Date = $4 where id = $1", payment.Id, payment.Person, payment.Amount, payment.Date)
-	if err != nil {
-		println(err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	rowsN, _ := result.RowsAffected()
-	res := "Updated rows: " + strconv.FormatInt(rowsN, 10)
-	w.Write([]byte("Payment updated successfully: " + res))
-}
-
-func deleteMethod(w http.ResponseWriter, r *http.Request) {
-	payment := Payment{}
-	if err := json.NewDecoder(r.Body).Decode(&payment); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		println(err.Error())
-		return
-	}
-
-	println(payment.Id)
-
-	result, err := paymentDB.Exec("DELETE from payments where Id = $1", payment.Id)
-	if err != nil {
-		println(err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	rowsN, _ := result.RowsAffected()
-	res := "Deleted rows: " + strconv.FormatInt(rowsN, 10)
-	w.Write([]byte("Payment deleted successfully: " + res))
 }

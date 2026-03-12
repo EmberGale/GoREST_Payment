@@ -2,7 +2,11 @@ module GoREST_Payment
 
 go 1.26
 
-require modernc.org/sqlite v1.46.1
+require (
+	github.com/glebarez/go-sqlite v1.22.0
+	github.com/go-chi/chi/v5 v5.2.5
+	modernc.org/sqlite v1.46.1 // indirect
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
